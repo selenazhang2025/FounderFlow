@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "https://esm.sh/react@18.3.1";
+import React, { useEffect, useMemo, useState } from "https://esm.sh/react@18.3.1";
 import htm from "https://esm.sh/htm@3.1.1";
 
 const html = htm.bind(React.createElement);
@@ -8,6 +8,7 @@ const stages = [
   { id: "talking", title: "In conversation", description: "You're talking details" },
   { id: "ready", title: "Close to yes", description: "Time to follow up" },
   { id: "won", title: "Said yes", description: "You earned the win" },
+  { id: "archived", title: "Archived", description: "Paused or not moving right now" },
 ];
 
 const learningPrompts = [
@@ -66,31 +67,99 @@ const starterOpportunities = [
   },
 ];
 
+const starterPerson = {
+  name: "",
+  business: "",
+  value: "",
+  nextStep: "",
+  note: "",
+  stage: "new",
+};
+
 function getDueStatus(lastContactDays) {
   if (lastContactDays >= 5) return { label: "Follow up now", className: "overdue" };
   if (lastContactDays >= 3) return { label: "Follow up today", className: "today" };
   return { label: "On track", className: "win" };
 }
 
-function buildDraftMessage(person, business) {
+function pickVariant(options, seed) {
+  return options[seed % options.length];
+}
+
+function cleanFragment(text) {
+  return text.trim().replace(/[.!?]+$/g, "");
+}
+
+function buildDraftMessage(person, business, refreshCount) {
   if (!person) {
     return "Pick a person to generate a personalized message draft.";
   }
 
-  const intro = business.product.split(" ").slice(0, 5).join(" ").toLowerCase();
-  const urgencyLine =
-    person.lastContactDays >= 5
-      ? "I wanted to follow up before this slips through the cracks."
-      : "I wanted to check in and make the next step easy.";
+  const firstName = person.name.split(" ")[0];
+  const productSnippet = business.product.split(" ").slice(0, 6).join(" ").toLowerCase();
+  const cleanNote = cleanFragment(person.note).toLowerCase();
+  const cleanNextStep = cleanFragment(person.nextStep).toLowerCase();
+
+  const greeting = pickVariant(
+    [`Hi ${firstName},`, `Hey ${firstName},`, `${firstName}, hope you're doing well.`],
+    refreshCount
+  );
+
+  const urgencyLine = person.lastContactDays >= 5
+    ? pickVariant(
+        [
+          "I wanted to follow up before this slips through the cracks.",
+          "Circling back because I did not want this opportunity to go cold.",
+          "Checking in again since this felt worth keeping moving.",
+        ],
+        refreshCount + 1
+      )
+    : pickVariant(
+        [
+          "I wanted to check in and make the next step easy.",
+          "Following up with a quick update in case helpful.",
+          "Reaching out with a simple next step so this stays easy to review.",
+        ],
+        refreshCount + 1
+      );
+
+  const contextLine = pickVariant(
+    [
+      `Based on what you shared about ${cleanNote}, I think ${productSnippet} could be a strong fit.`,
+      `From your note about ${cleanNote}, it sounds like ${productSnippet} could help.`,
+      `Because you mentioned ${cleanNote}, I think this could be a practical fit for you.`,
+    ],
+    refreshCount + 2
+  );
+
+  const supportLine = pickVariant(
+    [
+      `If it helps, I can send a quick option for ${cleanNextStep} and answer any questions today.`,
+      `I can also send a simple version of ${cleanNextStep} so you can see exactly what the next step looks like.`,
+      `If useful, I can put together a short option for ${cleanNextStep} and keep it easy to review.`,
+    ],
+    refreshCount + 3
+  );
+
+  const closingLine = pickVariant(
+    [
+      "Would you like me to send that over?",
+      "If you're interested, I can send the next step today.",
+      "Happy to send a simple option if that would help.",
+    ],
+    refreshCount + 4
+  );
 
   return [
-    `Hi ${person.name.split(" ")[0]},`,
+    greeting,
     "",
-    `${urgencyLine} Based on what you shared about ${person.note.toLowerCase()}, I think ${intro} could be a strong fit.`,
+    urgencyLine,
     "",
-    `If it helps, I can send a quick option for ${person.nextStep.toLowerCase()} and answer any questions today.`,
+    contextLine,
     "",
-    "Would you like me to send that over?",
+    supportLine,
+    "",
+    closingLine,
   ].join("\n");
 }
 
@@ -156,13 +225,120 @@ function SetupPanel({ business, onSubmit }) {
   `;
 }
 
+function AddPersonPanel({ onAddPerson }) {
+  const [draft, setDraft] = useState(starterPerson);
+
+  function updateField(field, value) {
+    setDraft((current) => ({ ...current, [field]: value }));
+  }
+
+  function handleSubmit(event) {
+    event.preventDefault();
+    if (!draft.name.trim() || !draft.business.trim() || !draft.nextStep.trim()) return;
+
+    onAddPerson({
+      id: `c${Date.now()}`,
+      name: draft.name.trim(),
+      business: draft.business.trim(),
+      value: draft.value.trim() || "Value not added yet",
+      nextStep: draft.nextStep.trim(),
+      note: draft.note.trim() || "No notes yet.",
+      stage: draft.stage,
+      lastContactDays: 0,
+    });
+
+    setDraft(starterPerson);
+  }
+
+  return html`
+    <section className="panel add-panel">
+      <div className="panel-heading">
+        <div>
+          <p className="section-label">Add a new relationship</p>
+          <h2>Log a new person interested</h2>
+        </div>
+        <span className="status-pill">Live updates</span>
+      </div>
+
+      <form className="add-form" onSubmit=${handleSubmit}>
+        <label>
+          Name
+          <input
+            type="text"
+            value=${draft.name}
+            placeholder="Aisha Patel"
+            onChange=${(event) => updateField("name", event.target.value)}
+          />
+        </label>
+        <label>
+          Where did they come from?
+          <input
+            type="text"
+            value=${draft.business}
+            placeholder="Instagram DM, school referral, club intro"
+            onChange=${(event) => updateField("business", event.target.value)}
+          />
+        </label>
+        <label>
+          Potential value
+          <input
+            type="text"
+            value=${draft.value}
+            placeholder="$120 package"
+            onChange=${(event) => updateField("value", event.target.value)}
+          />
+        </label>
+        <label>
+          Next step
+          <input
+            type="text"
+            value=${draft.nextStep}
+            placeholder="Send pricing details"
+            onChange=${(event) => updateField("nextStep", event.target.value)}
+          />
+        </label>
+        <label>
+          Notes
+          <input
+            type="text"
+            value=${draft.note}
+            placeholder="Asked about weekend sessions"
+            onChange=${(event) => updateField("note", event.target.value)}
+          />
+        </label>
+        <label>
+          Starting stage
+          <select
+            value=${draft.stage}
+            onChange=${(event) => updateField("stage", event.target.value)}
+          >
+            ${stages
+              .filter((stage) => stage.id !== "won" && stage.id !== "archived")
+              .map(
+                (stage) =>
+                  html`<option key=${stage.id} value=${stage.id}>${stage.title}</option>`
+              )}
+          </select>
+        </label>
+        <button type="submit">Add person interested</button>
+      </form>
+    </section>
+  `;
+}
+
 function DashboardPanel({ opportunities, learningPrompt }) {
-  const total = opportunities.length;
+  const activeOpportunities = opportunities.filter(
+    (item) => item.stage !== "won" && item.stage !== "archived"
+  );
+  const total = activeOpportunities.length;
   const won = opportunities.filter((item) => item.stage === "won").length;
-  const needsFollowUp = opportunities.filter((item) => item.lastContactDays >= 3).length;
-  const topOpportunity = [...opportunities]
-    .filter((item) => item.stage !== "won")
+  const archived = opportunities.filter((item) => item.stage === "archived").length;
+  const needsFollowUp = activeOpportunities.filter((item) => item.lastContactDays >= 3).length;
+  const topOpportunity = [...activeOpportunities]
     .sort((a, b) => b.lastContactDays - a.lastContactDays)[0];
+  const nextActionText = topOpportunity
+    ? `${topOpportunity.name} has been waiting ${topOpportunity.lastContactDays} days. Send a message about ${topOpportunity.nextStep.toLowerCase()}.`
+    : "Celebrate your wins and add a new person interested to keep growing.";
 
   return html`
     <section className="panel dashboard-panel">
@@ -174,6 +350,7 @@ function DashboardPanel({ opportunities, learningPrompt }) {
         <div className="mini-stats">
           <span className="stat-chip">${total} active people</span>
           <span className="stat-chip">${won} yes so far</span>
+          <span className="stat-chip">${archived} archived</span>
           <span className="stat-chip">${needsFollowUp} follow-up needed</span>
         </div>
       </div>
@@ -202,12 +379,8 @@ function DashboardPanel({ opportunities, learningPrompt }) {
           <p className="card-label">Next action</p>
           <div className="next-action">
             ${topOpportunity
-              ? html`<span>
-                  <strong>${topOpportunity.name}</strong> has been waiting
-                  ${topOpportunity.lastContactDays} days. Send a message about
-                  <strong>${topOpportunity.nextStep.toLowerCase()}</strong>.
-                </span>`
-              : "Celebrate your wins and add a new person interested to keep growing."}
+              ? html`<span>${nextActionText}</span>`
+              : nextActionText}
           </div>
         </article>
       </div>
@@ -215,7 +388,7 @@ function DashboardPanel({ opportunities, learningPrompt }) {
   `;
 }
 
-function OpportunityBoard({ opportunities, onMove }) {
+function OpportunityBoard({ opportunities, onMove, onArchive, onRemove }) {
   const [draggedId, setDraggedId] = useState(null);
 
   return html`
@@ -261,6 +434,22 @@ function OpportunityBoard({ opportunities, onMove }) {
                       draggable="true"
                       onDragStart=${() => setDraggedId(item.id)}
                     >
+                      <div className="card-actions">
+                        <button
+                          type="button"
+                          className="ghost-button"
+                          onClick=${() => onArchive(item.id)}
+                        >
+                          Archive
+                        </button>
+                        <button
+                          type="button"
+                          className="ghost-button danger-button"
+                          onClick=${() => onRemove(item.id)}
+                        >
+                          Remove
+                        </button>
+                      </div>
                       <strong>${item.name}</strong>
                       <h4>${item.business}</h4>
                       <p className="opportunity-meta">${item.note}</p>
@@ -280,7 +469,7 @@ function OpportunityBoard({ opportunities, onMove }) {
   `;
 }
 
-function ContactsPanel({ opportunities }) {
+function ContactsPanel({ opportunities, onArchive, onRemove }) {
   return html`
     <section className="panel contacts-panel">
       <div className="panel-heading">
@@ -296,6 +485,22 @@ function ContactsPanel({ opportunities }) {
 
           return html`
             <article key=${person.id} className="contact-card">
+              <div className="card-actions">
+                <button
+                  type="button"
+                  className="ghost-button"
+                  onClick=${() => onArchive(person.id)}
+                >
+                  Archive
+                </button>
+                <button
+                  type="button"
+                  className="ghost-button danger-button"
+                  onClick=${() => onRemove(person.id)}
+                >
+                  Remove
+                </button>
+              </div>
               <div className="contact-topline">
                 <span>${person.business}</span>
                 <span>${person.value}</span>
@@ -315,27 +520,29 @@ function ContactsPanel({ opportunities }) {
 }
 
 function MessageHelper({ opportunities, business }) {
-  const selectable = opportunities.filter((person) => person.stage !== "won");
+  const selectable = opportunities.filter(
+    (person) => person.stage !== "won" && person.stage !== "archived"
+  );
   const [selectedId, setSelectedId] = useState(selectable[0]?.id ?? "");
-  const [refreshCount, setRefreshCount] = useState(0);
+  const [refreshCount, setRefreshCount] = useState(() => Math.floor(Math.random() * 12));
+
+  useEffect(() => {
+    if (!selectable.length) {
+      setSelectedId("");
+      return;
+    }
+
+    const stillExists = selectable.some((person) => person.id === selectedId);
+    if (!stillExists) {
+      setSelectedId(selectable[0].id);
+    }
+  }, [selectable, selectedId]);
 
   const selectedPerson = selectable.find((person) => person.id === selectedId) ?? null;
-  const message = useMemo(() => {
-    const draft = buildDraftMessage(selectedPerson, business);
-    if (!selectedPerson) return draft;
-
-    const closingOptions = [
-      "Would you like me to send that over?",
-      "If you're interested, I can send the next step today.",
-      "Happy to send a simple option if that would help.",
-    ];
-    const selectedClosing = closingOptions[refreshCount % closingOptions.length];
-
-    return draft.replace(
-      "Would you like me to send that over?",
-      selectedClosing
-    );
-  }, [business, refreshCount, selectedPerson]);
+  const message = useMemo(
+    () => buildDraftMessage(selectedPerson, business, refreshCount),
+    [business, refreshCount, selectedPerson]
+  );
 
   return html`
     <section className="panel suggestion-panel">
@@ -396,10 +603,36 @@ export function App() {
         return {
           ...item,
           stage: newStage,
-          lastContactDays: newStage === "won" ? 0 : Math.max(0, item.lastContactDays - 1),
+          lastContactDays:
+            newStage === "won" || newStage === "archived"
+              ? 0
+              : Math.max(0, item.lastContactDays - 1),
         };
       })
     );
+  }
+
+  function handleAddPerson(person) {
+    setOpportunities((current) => [person, ...current]);
+  }
+
+  function handleArchiveOpportunity(id) {
+    setOpportunities((current) =>
+      current.map((item) => {
+        if (item.id !== id) return item;
+
+        return {
+          ...item,
+          stage: "archived",
+          lastContactDays: 0,
+          nextStep: "Archived for later",
+        };
+      })
+    );
+  }
+
+  function handleRemoveOpportunity(id) {
+    setOpportunities((current) => current.filter((item) => item.id !== id));
   }
 
   return html`
@@ -429,11 +662,18 @@ export function App() {
           opportunities=${opportunities}
           learningPrompt=${learningPrompt}
         />
+        <${AddPersonPanel} onAddPerson=${handleAddPerson} />
         <${OpportunityBoard}
           opportunities=${opportunities}
           onMove=${handleMoveOpportunity}
+          onArchive=${handleArchiveOpportunity}
+          onRemove=${handleRemoveOpportunity}
         />
-        <${ContactsPanel} opportunities=${opportunities} />
+        <${ContactsPanel}
+          opportunities=${opportunities}
+          onArchive=${handleArchiveOpportunity}
+          onRemove=${handleRemoveOpportunity}
+        />
         <${MessageHelper} opportunities=${opportunities} business=${business} />
       </main>
     </div>

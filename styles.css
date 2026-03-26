@@ -113,6 +113,10 @@ body {
   grid-column: span 6;
 }
 
+.add-panel {
+  grid-column: span 12;
+}
+
 .board-panel,
 .contacts-panel,
 .suggestion-panel {
@@ -146,11 +150,27 @@ body {
   gap: 16px;
 }
 
+.add-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
 .setup-form label,
 .message-label {
   font-weight: 700;
   display: grid;
   gap: 8px;
+}
+
+.add-form label {
+  font-weight: 700;
+  display: grid;
+  gap: 8px;
+}
+
+.add-form button {
+  align-self: end;
 }
 
 input,
@@ -307,6 +327,27 @@ button:hover {
   margin-bottom: 4px;
 }
 
+.card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.ghost-button {
+  padding: 8px 10px;
+  border-radius: 999px;
+  background: #f6efe4;
+  color: var(--brick);
+  box-shadow: none;
+  font-size: 0.86rem;
+}
+
+.danger-button {
+  background: #ffe4dc;
+  color: #9b3f25;
+}
+
 .tag-row {
   display: flex;
   gap: 8px;
@@ -378,8 +419,13 @@ button:hover {
     grid-template-columns: 1fr;
   }
 
+  .add-form {
+    grid-template-columns: 1fr;
+  }
+
   .setup-panel,
   .dashboard-panel,
+  .add-panel,
   .board-panel,
   .contacts-panel,
   .suggestion-panel {
